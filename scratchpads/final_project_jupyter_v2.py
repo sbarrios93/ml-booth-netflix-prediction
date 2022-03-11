@@ -1,31 +1,33 @@
-# ---
-# jupyter:
-#   jupytext:
-#     formats: ipynb,py:light
-#     text_representation:
-#       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.13.7
-#   kernelspec:
-#     display_name: Python 3 (ipykernel)
-#     language: python
-#     name: python3
-# ---
+#!/usr/bin/env python
+# coding: utf-8
 
-# +
+# In[3]:
+
+
 # https://medium.com/@tomar.ankur287/user-user-collaborative-filtering-recommender-system-51f568489727
 
 import pandas as pd
 import numpy as np
 import math
+import warnings
 
+warnings.filterwarnings("ignore")
 Ratings = pd.read_csv("data/parsed_combined_data_1.txt")
 
 
-# -
+# In[4]:
+
 
 Ratings.columns = ["movieId", "userId", "rating", "timestamp"]
+
+
+# In[5]:
+
+
+Ratings
+
+
+# In[6]:
 
 
 Mean = (
@@ -38,13 +40,18 @@ Ratings["rating_adjusted"] = Ratings["rating"] - Ratings["rating_mean"]
 Ratings
 
 
+# In[7]:
+
+
 distinct_movie = np.unique(Ratings["movieId"])
 distinct_users = np.unique(Ratings["userId"])
 
 
+# In[8]:
+
+
 def get_movie_rating(movie_id, user_id):
     user_data_append = pd.DataFrame()
-    user_data_all = pd.DataFrame()
 
     user1_data = Ratings[Ratings["userId"] == user_id]
     user1_mean = user1_data["rating"].mean()
@@ -57,38 +64,40 @@ def get_movie_rating(movie_id, user_id):
     item_user = Ratings[Ratings["movieId"] == movie]
 
     distinct_users1 = np.unique(item_user["userId"])
+    if len(distinct_users1) == 0:
+        return pd.DataFrame([0])
 
     j = 1
 
-    print("distinct_users1: " + str(len(distinct_users1)))
+    # print('distinct_users1: ' + str(len(distinct_users1)))
 
-    for user2 in distinct_users1:
-        user2_data = Ratings[Ratings["userId"] == user2]
-        user2_data = user2_data.rename(columns={"rating_adjusted": "rating_adjusted2"})
-        user2_data = user2_data.rename(columns={"userId": "userId2"})
-        user2_val = np.sqrt(np.sum(np.square(user2_data["rating_adjusted2"]), axis=0))
+    # filter ratings for distinct users
+    ratings_distinct_users = Ratings[Ratings["userId"].isin(distinct_users1)]
 
-        user_data = pd.merge(
-            user1_data, user2_data[["rating_adjusted2", "movieId", "userId2"]], on="movieId", how="inner", sort=False
-        )
-        user_data["vector_product"] = user_data["rating_adjusted1"] * user_data["rating_adjusted2"]
+    rms_vals = ratings_distinct_users.groupby("userId").apply(
+        lambda x: np.sqrt(np.sum(np.square(x["rating_adjusted"]), axis=0))
+    )
+    rms_vals.name = "rms_vals"
 
-        user_data = user_data.groupby(["userId1", "userId2"], as_index=False, sort=False).sum()
+    ratings_distinct_users = ratings_distinct_users.merge(rms_vals, left_on="userId", right_index=True, how="left")
 
-        user_data["dot"] = user_data["vector_product"] / (user1_val * user2_val)
+    ratings_distinct_users.rename(columns={"rating_adjusted": "rating_adjusted2"}, inplace=True)
+    ratings_distinct_users.rename(columns={"userId": "userId2"}, inplace=True)
 
-        user_data_all = pd.concat([user_data_all, user_data], ignore_index=True)
+    user_data = pd.merge(user1_data, ratings_distinct_users, on="movieId", how="inner", sort=False)
 
-        j = j + 1
-        if j % 100 == 0:
-            print("user_comparison: " + str(j))
+    user_data["vector_product"] = user_data["rating_adjusted1"] * user_data["rating_adjusted2"]
 
-    print("user comparison done")
-    user_data_all = user_data_all[user_data_all["dot"] < 1]
-    user_data_all = user_data_all.sort_values(["dot"], ascending=False)
-    user_data_all = user_data_all.head(30)
-    user_data_all["movieId"] = movie
-    user_data_append = pd.concat([user_data_append, user_data_all], ignore_index=True)
+    user_data_all = user_data.groupby(["userId1", "userId2", "rms_vals"]).sum().reset_index()
+
+    user_data["dot"] = user_data["vector_product"] / (user1_val * user_data["rms_vals"])
+
+    # print('user comparison done')
+    user_data = user_data[user_data["dot"] < 1]
+    user_data = user_data.sort_values(["dot"], ascending=False)
+    user_data = user_data.head(30)
+    user_data["movieId"] = movie
+    user_data_append = pd.concat([user_data_append, user_data], ignore_index=True)
 
     User_dot_adj_rating_all = pd.DataFrame()
 
@@ -120,24 +129,32 @@ def get_movie_rating(movie_id, user_id):
 
         User_dot_adj_rating_all = pd.concat([User_dot_adj_rating_all, User_dot_adj_rating1], ignore_index=True)
 
-    User_dot_adj_rating_all = User_dot_adj_rating_all.sort_values(["Rating"], ascending=False)
+        User_dot_adj_rating_all = User_dot_adj_rating_all.sort_values(["Rating"], ascending=False)
     return User_dot_adj_rating_all
 
 
-# +
+# In[9]:
+
+
+from tqdm import tqdm
+
 prediction = pd.DataFrame()
 i = 0
 with open("data/parsed_qualifying.txt", "r") as f:
-    for l in f.readlines():
+    for j, l in enumerate(tqdm(f.readlines())):
         row = l.strip().split(",")
-        print(row)
+        # print(row)
         user_movie_rating = get_movie_rating(movie_id=int(row[0]), user_id=int(row[1]))
-        print(user_movie_rating)
+        # print(user_movie_rating)
         pd.concat([prediction, user_movie_rating])
         i = i + 1
-        if i > 1:
+        if i > 100:
             break
 
-prediction
 
-# -
+# In[66]:
+
+
+# In[63]:
+
+# In[ ]:
